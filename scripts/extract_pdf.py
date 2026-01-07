@@ -7,6 +7,7 @@ Extracts text content from PDF files.
 import fitz  # PyMuPDF
 import sys
 import os
+import time
 
 
 def extract_text_from_pdf(pdf_path, output_path=None):
@@ -20,14 +21,21 @@ def extract_text_from_pdf(pdf_path, output_path=None):
     Returns:
         str: Extracted text content
     """
+    start_time = time.time()
+    print(f"Starting extraction at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}")
+    
     try:
         # Open the PDF file
         doc = fitz.open(pdf_path)
         
+        # Display page count
+        total_pages = len(doc)
+        print(f"Total pages: {total_pages}\n")
+        
         # Extract text from all pages
         text_content = []
         
-        for page_num in range(len(doc)):
+        for page_num in range(total_pages):
             page = doc[page_num]
             text = page.get_text()
             # text_content.append(f"--- Page {page_num + 1} ---\n{text}\n")
@@ -46,6 +54,11 @@ def extract_text_from_pdf(pdf_path, output_path=None):
             print(f"Text extracted and saved to: {output_path}")
         else:
             print(full_text)
+        
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print(f"\nExtraction completed at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(end_time))}")
+        print(f"Total time taken: {elapsed_time:.2f} seconds")
         
         return full_text
     
