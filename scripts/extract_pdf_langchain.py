@@ -1,48 +1,44 @@
 #!/usr/bin/env python3
 """
-PDF Content Extractor using PyMuPDF
-Extracts text content from PDF files.
+PDF Content Extractor using LangChain
+Extracts text content from PDF files using LangChain document loaders.
 """
 
-import fitz  # PyMuPDF
 import sys
 import os
 import time
+from langchain_community.document_loaders import PyMuPDFLoader
 
 
 def extract_text_from_pdf(pdf_path, output_path=None):
     """
-    Extract text content from a PDF file.
+    Extract text content from a PDF file using LangChain.
     
     Args:
         pdf_path (str): Path to the PDF file
         output_path (str, optional): Path to save extracted text. If None, prints to console.
     
     Returns:
-        str: Extracted text content
+        list: List of LangChain Document objects
     """
     start_time = time.time()
     print(f"Starting extraction at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}")
     
     try:
-        # Open the PDF file
-        doc = fitz.open(pdf_path)
+        # Load PDF using LangChain's PyMuPDFLoader
+        loader = PyMuPDFLoader(pdf_path)
+        documents = loader.load()
         
         # Display page count
-        total_pages = len(doc)
+        total_pages = len(documents)
         print(f"Total pages: {total_pages}\n")
         
-        # Extract text from all pages
+        # Extract and combine text from all pages
         text_content = []
-        
-        for page_num in range(total_pages):
-            page = doc[page_num]
-            text = page.get_text()
-            # text_content.append(f"--- Page {page_num + 1} ---\n{text}\n")
-            text_content.append(f"{text}")
-        
-        # Close the document
-        doc.close()
+        for i, doc in enumerate(documents):
+            page_num = doc.metadata.get('page', i)
+            # text_content.append(f"--- Page {page_num + 1} ---\n{doc.page_content}\n")
+            text_content.append(f"{doc.page_content}\n")
         
         # Combine all text
         # full_text = "\n".join(text_content)
@@ -61,7 +57,7 @@ def extract_text_from_pdf(pdf_path, output_path=None):
         print(f"\nExtraction completed at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(end_time))}")
         print(f"Total time taken: {elapsed_time:.2f} seconds")
         
-        return full_text
+        return documents
     
     except Exception as e:
         print(f"Error extracting text from PDF: {e}")
@@ -70,19 +66,20 @@ def extract_text_from_pdf(pdf_path, output_path=None):
 
 def extract_metadata(pdf_path):
     """
-    Extract metadata from a PDF file.
+    Extract metadata from a PDF file using LangChain.
     
     Args:
         pdf_path (str): Path to the PDF file
     
     Returns:
-        dict: PDF metadata
+        dict: PDF metadata from first page
     """
     try:
-        doc = fitz.open(pdf_path)
-        metadata = doc.metadata
-        doc.close()
-        return metadata
+        loader = PyMuPDFLoader(pdf_path)
+        documents = loader.load()
+        if documents:
+            return documents[0].metadata
+        return None
     except Exception as e:
         print(f"Error extracting metadata: {e}")
         return None
@@ -91,8 +88,8 @@ def extract_metadata(pdf_path):
 def main():
     """Main function to handle command-line usage."""
     if len(sys.argv) < 2:
-        print("Usage: python extract_pdf.py <pdf_file> [output_file]")
-        print("Example: python extract_pdf.py document.pdf output.txt")
+        print("Usage: python extract_pdf_langchain.py <pdf_file> [output_file]")
+        print("Example: python extract_pdf_langchain.py document.pdf output.txt")
         sys.exit(1)
     
     pdf_path = sys.argv[1]
