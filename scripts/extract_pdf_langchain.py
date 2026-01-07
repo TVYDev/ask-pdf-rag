@@ -10,6 +10,59 @@ import time
 from langchain_community.document_loaders import PyMuPDFLoader
 
 
+def load_pdf_documents(pdf_path):
+    """
+    Load PDF and return LangChain Document objects without printing or saving.
+    This function is designed to be imported and used in other modules.
+    
+    Args:
+        pdf_path (str): Path to the PDF file
+    
+    Returns:
+        list: List of LangChain Document objects (one per page)
+    
+    Raises:
+        FileNotFoundError: If PDF file doesn't exist
+        Exception: For other PDF loading errors
+    """
+    if not os.path.exists(pdf_path):
+        raise FileNotFoundError(f"PDF file '{pdf_path}' not found.")
+    
+    try:
+        loader = PyMuPDFLoader(pdf_path)
+        documents = loader.load()
+        return documents
+    except Exception as e:
+        raise Exception(f"Error loading PDF: {e}")
+
+
+def read_pdf_content(pdf_path):
+    """
+    Read and return PDF content as a string without printing or saving.
+    This function is designed to be imported and used in other modules.
+    
+    Args:
+        pdf_path (str): Path to the PDF file
+    
+    Returns:
+        str: Extracted text content from all pages
+    
+    Raises:
+        FileNotFoundError: If PDF file doesn't exist
+        Exception: For other PDF loading errors
+    """
+    documents = load_pdf_documents(pdf_path)
+    
+    # Extract and combine text from all pages
+    text_content = []
+    for doc in documents:
+        text_content.append(doc.page_content)
+    
+    # Combine all text
+    full_text = "".join(text_content)
+    return full_text
+
+
 def extract_text_from_pdf(pdf_path, output_path=None):
     """
     Extract text content from a PDF file using LangChain.
@@ -25,9 +78,8 @@ def extract_text_from_pdf(pdf_path, output_path=None):
     print(f"Starting extraction at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}")
     
     try:
-        # Load PDF using LangChain's PyMuPDFLoader
-        loader = PyMuPDFLoader(pdf_path)
-        documents = loader.load()
+        # Use the reusable function to load documents
+        documents = load_pdf_documents(pdf_path)
         
         # Display page count
         total_pages = len(documents)
@@ -37,11 +89,9 @@ def extract_text_from_pdf(pdf_path, output_path=None):
         text_content = []
         for i, doc in enumerate(documents):
             page_num = doc.metadata.get('page', i)
-            # text_content.append(f"--- Page {page_num + 1} ---\n{doc.page_content}\n")
             text_content.append(f"{doc.page_content}\n")
         
         # Combine all text
-        # full_text = "\n".join(text_content)
         full_text = "".join(text_content)
         
         # Save or print the extracted text
@@ -75,8 +125,7 @@ def extract_metadata(pdf_path):
         dict: PDF metadata from first page
     """
     try:
-        loader = PyMuPDFLoader(pdf_path)
-        documents = loader.load()
+        documents = load_pdf_documents(pdf_path)
         if documents:
             return documents[0].metadata
         return None

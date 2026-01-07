@@ -10,6 +10,74 @@ import os
 import time
 
 
+def read_pdf_content(pdf_path):
+    """
+    Read and return PDF content without printing or saving.
+    This function is designed to be imported and used in other modules.
+    
+    Args:
+        pdf_path (str): Path to the PDF file
+    
+    Returns:
+        str: Extracted text content from all pages
+    
+    Raises:
+        FileNotFoundError: If PDF file doesn't exist
+        Exception: For other PDF reading errors
+    """
+    if not os.path.exists(pdf_path):
+        raise FileNotFoundError(f"PDF file '{pdf_path}' not found.")
+    
+    try:
+        # Open the PDF file
+        doc = fitz.open(pdf_path)
+        
+        # Extract text from all pages
+        text_content = []
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            text = page.get_text()
+            text_content.append(text)
+        
+        # Close the document
+        doc.close()
+        
+        # Combine all text
+        full_text = "".join(text_content)
+        return full_text
+    
+    except Exception as e:
+        raise Exception(f"Error reading PDF: {e}")
+
+
+def save_pdf_content(pdf_path, output_path):
+    """
+    Extract PDF content and save it to a text file.
+    This function is designed to be imported and used in other modules.
+    
+    Args:
+        pdf_path (str): Path to the PDF file
+        output_path (str): Path to save the extracted text
+    
+    Returns:
+        str: Path to the output file
+    
+    Raises:
+        FileNotFoundError: If PDF file doesn't exist
+        Exception: For other PDF reading or writing errors
+    """
+    # Read PDF content
+    content = read_pdf_content(pdf_path)
+    
+    # Save to output file
+    try:
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        return output_path
+    except Exception as e:
+        raise Exception(f"Error saving content to file: {e}")
+
+
 def extract_text_from_pdf(pdf_path, output_path=None):
     """
     Extract text content from a PDF file.
@@ -25,28 +93,15 @@ def extract_text_from_pdf(pdf_path, output_path=None):
     print(f"Starting extraction at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}")
     
     try:
-        # Open the PDF file
+        # Open the PDF file to get page count
         doc = fitz.open(pdf_path)
-        
-        # Display page count
         total_pages = len(doc)
-        print(f"Total pages: {total_pages}\n")
-        
-        # Extract text from all pages
-        text_content = []
-        
-        for page_num in range(total_pages):
-            page = doc[page_num]
-            text = page.get_text()
-            # text_content.append(f"--- Page {page_num + 1} ---\n{text}\n")
-            text_content.append(f"{text}")
-        
-        # Close the document
         doc.close()
         
-        # Combine all text
-        # full_text = "\n".join(text_content)
-        full_text = "".join(text_content)
+        print(f"Total pages: {total_pages}\n")
+        
+        # Use the reusable function to read content
+        full_text = read_pdf_content(pdf_path)
         
         # Save or print the extracted text
         if output_path:
