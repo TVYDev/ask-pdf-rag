@@ -49,7 +49,7 @@ def read_pdf_content(pdf_path):
     return full_text
 
 
-def save_pdf_content(pdf_path, output_path):
+def save_pdf_content(pdf_path, output_file_path):
     """
     Extract text from a PDF and save it to a file for use in a RAG chunking pipeline.
 
@@ -58,7 +58,7 @@ def save_pdf_content(pdf_path, output_path):
 
     Args:
         pdf_path (str): Path to the source PDF file
-        output_path (str): Path where the extracted text file will be saved
+        output_file_path (str): Path where the extracted text file will be saved
 
     Returns:
         str: Absolute path to the saved output file
@@ -69,9 +69,9 @@ def save_pdf_content(pdf_path, output_path):
     """
     documents = load_pdf_documents(pdf_path)
 
-    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(output_file_path)), exist_ok=True)
 
-    with open(output_path, "w", encoding="utf-8") as f:
+    with open(output_file_path, "w", encoding="utf-8") as f:
         for i, doc in enumerate(documents):
             page_num = doc.metadata.get("page", i)
             source = doc.metadata.get("source", pdf_path)
@@ -79,4 +79,4 @@ def save_pdf_content(pdf_path, output_path):
             f.write(doc.page_content)
             f.write("\n\n")
 
-    return os.path.abspath(output_path)
+    return os.path.abspath(output_file_path)
