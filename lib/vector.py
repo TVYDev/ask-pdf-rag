@@ -63,11 +63,11 @@ def store_embeddings(chunks: list[dict]) -> int:
         (
             chunk["source"],
             chunk["page"],
-            chunk["index"],
+            chunk.get("index", i),
             chunk["text"],
             chunk["embedding"],
         )
-        for chunk in chunks
+        for i, chunk in enumerate(chunks)
     ]
 
     with _get_connection() as conn:
@@ -82,3 +82,43 @@ def store_embeddings(chunks: list[dict]) -> int:
         conn.commit()
 
     return len(rows)
+
+
+def search_similar(query_embedding: list[float], top_k: int = 5) -> list[dict]:
+    """Return the top-k document chunks most similar to *query_embedding*.
+
+    Uses the pgvector cosine distance operator (<=>).
+
+    Args:
+        query_embedding: 384-dimensional query vector produced by embed_text().
+        top_k:           Number of results to return (default: 5).
+
+    Returns:
+        List of dicts with keys: id, source, page, chunk_index, text, score.
+        Score is cosine similarity (1 − distance), higher = more relevant.
+    """
+    with _get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, source, page, chunk_index, text,
+                       1 - (embedding <=> %s::vector) AS score
+                FROM   document_chunks
+                ORDER  BY embedding <=> %s::vector
+                LIMIT  %s
+                """,
+                (query_embedding, query_embedding, top_k),
+            )
+            rows = cur.fetchall()
+
+    return [
+        {
+            "id":          row[0],
+            "source":      row[1],
+            "page":        row[2],
+            "chunk_index": row[3],
+            "text":        row[4],
+            "score":       float(row[5]),
+        }
+        for row in rows
+    ]

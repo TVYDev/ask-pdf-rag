@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ask PDF — RAG Pipeline</title>
+    <style>
+      /* ── Tab nav ─────────────────────────────────────────────────────── */
+      .tabs {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 2rem;
+        background: #13162a;
+        border-radius: 10px;
+        padding: 0.35rem;
+      }
+      .tab-btn {
+        flex: 1;
+        padding: 0.6rem 1rem;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: #64748b;
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+          background 0.2s,
+          color 0.2s;
+      }
+      .tab-btn.active {
+        background: #1a1d2e;
+        color: #e2e8f0;
+        box-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+      }
+      .tab-panel {
+        display: none;
+      }
+      .tab-panel.active {
+        display: block;
+      }
+
+      /* ── Ask panel ───────────────────────────────────────────────────── */
+      .ask-input-row {
+        display: flex;
+        gap: 0.6rem;
+      }
+      .ask-input {
+        flex: 1;
+        padding: 0.75rem 1rem;
+        background: #13162a;
+        border: 1px solid #2d3148;
+        border-radius: 10px;
+        color: #e2e8f0;
+        font-size: 0.95rem;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      .ask-input:focus {
+        border-color: #6366f1;
+      }
+      .ask-input::placeholder {
+        color: #475569;
+      }
+
+      .btn-ask {
+        padding: 0.75rem 1.4rem;
+        background: #6366f1;
+        color: #fff;
+        font-size: 0.95rem;
+        font-weight: 600;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        transition:
+          background 0.2s,
+          opacity 0.2s;
+        white-space: nowrap;
+      }
+      .btn-ask:hover:not(:disabled) {
+        background: #4f46e5;
+      }
+      .btn-ask:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .ask-results {
+        margin-top: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      .result-card {
+        background: #13162a;
+        border: 1px solid #1e2240;
+        border-radius: 10px;
+        padding: 1rem 1.1rem;
+      }
+      .result-meta {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.75rem;
+        color: #475569;
+        margin-bottom: 0.5rem;
+      }
+      .result-meta .score {
+        color: #818cf8;
+        font-weight: 600;
+      }
+      .result-text {
+        font-size: 0.875rem;
+        color: #cbd5e1;
+        line-height: 1.6;
+        white-space: pre-wrap;
+      }
+
+      .ask-empty {
+        text-align: center;
+        color: #475569;
+        font-size: 0.875rem;
+        padding: 2rem 0;
+      }
+
+      .ask-spinner {
+        display: none;
+        text-align: center;
+        color: #6366f1;
+        font-size: 0.875rem;
+        padding: 1.5rem 0;
+        animation: fadeIn 0.2s ease;
+      }
+      .ask-spinner.visible {
+        display: block;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+    </style>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #0f1117;
+        color: #e2e8f0;
+        min-height: 100vh;
+        padding: 0;
+      }
+
+      .card {
+        background: #1a1d2e;
+        border: none;
+        border-radius: 0;
+        padding: 2.5rem clamp(1.5rem, 5vw, 4rem);
+        width: 100%;
+        min-height: 100vh;
+        max-width: 100%;
+      }
+
+      h1 {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #f8fafc;
+        margin-bottom: 0.4rem;
+      }
+
+      .subtitle {
+        font-size: 0.875rem;
+        color: #64748b;
+        margin-bottom: 2rem;
+      }
+
+      /* Drop zone */
+      .drop-zone {
+        border: 2px dashed #2d3148;
+        border-radius: 12px;
+        padding: 2.5rem 1.5rem;
+        text-align: center;
+        cursor: pointer;
+        transition:
+          border-color 0.2s,
+          background 0.2s;
+        position: relative;
+      }
+      .drop-zone:hover,
+      .drop-zone.drag-over {
+        border-color: #6366f1;
+        background: rgba(99, 102, 241, 0.05);
+      }
+      .drop-zone input[type="file"] {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+        width: 100%;
+        height: 100%;
+      }
+      .drop-icon {
+        font-size: 2.5rem;
+        margin-bottom: 0.75rem;
+      }
+      .drop-label {
+        font-size: 0.95rem;
+        color: #94a3b8;
+      }
+      .drop-label span {
+        color: #818cf8;
+        text-decoration: underline;
+      }
+      .drop-hint {
+        font-size: 0.75rem;
+        color: #475569;
+        margin-top: 0.4rem;
+      }
+      .file-chosen {
+        margin-top: 1rem;
+        font-size: 0.85rem;
+        color: #6ee7b7;
+        display: none;
+      }
+
+      /* Run button */
+      .btn {
+        display: block;
+        width: 100%;
+        margin-top: 1.5rem;
+        padding: 0.85rem;
+        background: #6366f1;
+        color: #fff;
+        font-size: 1rem;
+        font-weight: 600;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        transition:
+          background 0.2s,
+          opacity 0.2s;
+      }
+      .btn:hover:not(:disabled) {
+        background: #4f46e5;
+      }
+      .btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      /* Pipeline steps */
+      .steps {
+        margin-top: 2rem;
+        display: none;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .steps.visible {
+        display: flex;
+      }
+
+      .step {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.85rem 1rem;
+        border-radius: 10px;
+        background: #13162a;
+        border: 1px solid #1e2240;
+        transition: border-color 0.3s;
+      }
+      .step.active {
+        border-color: #6366f1;
+      }
+      .step.done {
+        border-color: #22c55e;
+      }
+      .step.error {
+        border-color: #ef4444;
+      }
+
+      .step-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.95rem;
+        flex-shrink: 0;
+        background: #1e2240;
+        color: #475569;
+        transition:
+          background 0.3s,
+          color 0.3s;
+      }
+      .step.active .step-icon {
+        background: #312e81;
+        color: #a5b4fc;
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+      .step.done .step-icon {
+        background: #14532d;
+        color: #86efac;
+      }
+      .step.error .step-icon {
+        background: #450a0a;
+        color: #fca5a5;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+        }
+        50% {
+          box-shadow: 0 0 0 6px rgba(99, 102, 241, 0);
+        }
+      }
+
+      .step-info {
+        flex: 1;
+      }
+      .step-name {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #cbd5e1;
+      }
+      .step-detail {
+        font-size: 0.78rem;
+        color: #475569;
+        margin-top: 0.2rem;
+        min-height: 1em;
+        transition: color 0.2s;
+      }
+      .step.done .step-detail {
+        color: #4ade80;
+      }
+      .step.error .step-detail {
+        color: #f87171;
+      }
+
+      /* Summary */
+      .summary {
+        margin-top: 1.5rem;
+        padding: 1rem 1.25rem;
+        border-radius: 10px;
+        background: #0d1321;
+        border: 1px solid #22c55e;
+        display: none;
+      }
+      .summary.visible {
+        display: block;
+      }
+      .summary-title {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #86efac;
+        margin-bottom: 0.5rem;
+      }
+      .summary-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.82rem;
+        color: #94a3b8;
+        padding: 0.2rem 0;
+      }
+      .summary-row span:last-child {
+        color: #e2e8f0;
+      }
+
+      .error-box {
+        margin-top: 1.5rem;
+        padding: 1rem 1.25rem;
+        border-radius: 10px;
+        background: #1a0a0a;
+        border: 1px solid #ef4444;
+        font-size: 0.85rem;
+        color: #fca5a5;
+        display: none;
+      }
+      .error-box.visible {
+        display: block;
+      }
+
+      /* Reset link */
+      .reset-link {
+        display: none;
+        margin-top: 1.25rem;
+        text-align: center;
+        font-size: 0.85rem;
+        color: #6366f1;
+        cursor: pointer;
+        text-decoration: underline;
+      }
+      .reset-link.visible {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>📄 Ask PDF</h1>
+      <p class="subtitle">
+        Ingest PDFs into the RAG pipeline or ask questions about your documents.
+      </p>
+
+      <!-- Tab nav -->
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('pipeline')">
+          ⚙️ Ingest Pipeline
+        </button>
+        <button class="tab-btn" onclick="switchTab('ask')">
+          💬 Ask Documents
+        </button>
+      </div>
+
+      <!-- ══ PIPELINE TAB ═══════════════════════════════════════════════ -->
+      <div class="tab-panel active" id="tab-pipeline">
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="pdfInput" accept=".pdf" />
+          <div class="drop-icon">📂</div>
+          <p class="drop-label">Drop your PDF here or <span>browse</span></p>
+          <p class="drop-hint">Only .pdf files are accepted</p>
+          <p class="file-chosen" id="fileChosen"></p>
+        </div>
+
+        <button class="btn" id="runBtn" disabled>Run Pipeline</button>
+
+        <!-- Progress steps -->
+        <div class="steps" id="steps">
+          <div class="step" id="step-extract">
+            <div class="step-icon">1</div>
+            <div class="step-info">
+              <div class="step-name">Extract Text</div>
+              <div class="step-detail" id="detail-extract">Waiting…</div>
+            </div>
+          </div>
+          <div class="step" id="step-chunk">
+            <div class="step-icon">2</div>
+            <div class="step-info">
+              <div class="step-name">Chunk Text</div>
+              <div class="step-detail" id="detail-chunk">Waiting…</div>
+            </div>
+          </div>
+          <div class="step" id="step-embed">
+            <div class="step-icon">3</div>
+            <div class="step-info">
+              <div class="step-name">Embed Chunks</div>
+              <div class="step-detail" id="detail-embed">Waiting…</div>
+            </div>
+          </div>
+          <div class="step" id="step-store">
+            <div class="step-icon">4</div>
+            <div class="step-info">
+              <div class="step-name">Store in Database</div>
+              <div class="step-detail" id="detail-store">Waiting…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Success summary -->
+        <div class="summary" id="summary">
+          <div class="summary-title">✅ Pipeline complete</div>
+          <div class="summary-row">
+            <span>File</span><span id="sum-file">—</span>
+          </div>
+          <div class="summary-row">
+            <span>Chunks</span><span id="sum-chunks">—</span>
+          </div>
+          <div class="summary-row">
+            <span>Embedding model</span><span>all-MiniLM-L6-v2 (384 dims)</span>
+          </div>
+          <div class="summary-row">
+            <span>Rows inserted</span><span id="sum-rows">—</span>
+          </div>
+        </div>
+
+        <!-- Error box -->
+        <div class="error-box" id="errorBox"></div>
+
+        <div class="reset-link" id="resetLink" onclick="resetUI()">
+          ← Process another file
+        </div>
+      </div>
+      <!-- /tab-pipeline -->
+
+      <!-- ══ ASK TAB ════════════════════════════════════════════════════ -->
+      <div class="tab-panel" id="tab-ask">
+        <div class="ask-input-row">
+          <input
+            type="text"
+            id="askInput"
+            class="ask-input"
+            placeholder="Ask a question about your documents…"
+          />
+          <button class="btn-ask" id="askBtn" onclick="submitAsk()">Ask</button>
+        </div>
+
+        <div class="ask-spinner" id="askSpinner">
+          🔍 Searching relevant chunks…
+        </div>
+
+        <div class="ask-results" id="askResults">
+          <div class="ask-empty" id="askEmpty">
+            Your top matching document chunks will appear here.
+          </div>
+        </div>
+      </div>
+      <!-- /tab-ask -->
+    </div>
+
+    <script>
+      const input = document.getElementById("pdfInput");
+      const dropZone = document.getElementById("dropZone");
+      const fileChosen = document.getElementById("fileChosen");
+      const runBtn = document.getElementById("runBtn");
+      const stepsEl = document.getElementById("steps");
+      const summary = document.getElementById("summary");
+      const errorBox = document.getElementById("errorBox");
+      const resetLink = document.getElementById("resetLink");
+
+      // Drag-and-drop styling
+      dropZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropZone.classList.add("drag-over");
+      });
+      dropZone.addEventListener("dragleave", () =>
+        dropZone.classList.remove("drag-over"),
+      );
+      dropZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropZone.classList.remove("drag-over");
+        if (e.dataTransfer.files[0]) {
+          input.files = e.dataTransfer.files;
+          onFileSelected();
+        }
+      });
+
+      input.addEventListener("change", onFileSelected);
+
+      function onFileSelected() {
+        const file = input.files[0];
+        if (!file) return;
+        fileChosen.textContent = `✔ ${file.name}`;
+        fileChosen.style.display = "block";
+        runBtn.disabled = false;
+      }
+
+      function setStep(id, state, detail) {
+        const el = document.getElementById(`step-${id}`);
+        el.className = `step ${state}`;
+        const icons = { active: "⏳", done: "✔", error: "✖" };
+        el.querySelector(".step-icon").textContent = icons[state] || id;
+        if (detail !== undefined)
+          document.getElementById(`detail-${id}`).textContent = detail;
+      }
+
+      runBtn.addEventListener("click", async () => {
+        const file = input.files[0];
+        if (!file) return;
+
+        // Prepare UI
+        runBtn.disabled = true;
+        input.disabled = true;
+        stepsEl.classList.add("visible");
+        summary.classList.remove("visible");
+        errorBox.classList.remove("visible");
+        resetLink.classList.remove("visible");
+        ["extract", "chunk", "embed", "store"].forEach((s) =>
+          setStep(s, "", "Waiting…"),
+        );
+
+        const formData = new FormData();
+        formData.append("pdf", file);
+
+        try {
+          const response = await fetch("/api/process-pdf", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!response.ok) {
+            const err = await response
+              .json()
+              .catch(() => ({ error: response.statusText }));
+            throw new Error(err.error || response.statusText);
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop(); // keep incomplete line
+
+            for (const line of lines) {
+              if (!line.startsWith("data:")) continue;
+              const evt = JSON.parse(line.slice(5).trim());
+              handleEvent(evt, file.name);
+            }
+          }
+        } catch (err) {
+          errorBox.textContent = `Error: ${err.message}`;
+          errorBox.classList.add("visible");
+          resetLink.classList.add("visible");
+        }
+      });
+
+      function handleEvent(evt, filename) {
+        if (evt.type === "step_start") {
+          setStep(evt.step, "active", evt.message);
+        } else if (evt.type === "step_done") {
+          setStep(evt.step, "done", evt.message);
+        } else if (evt.type === "step_error") {
+          setStep(evt.step, "error", evt.message);
+          errorBox.textContent = `Pipeline failed at "${evt.step}": ${evt.message}`;
+          errorBox.classList.add("visible");
+          resetLink.classList.add("visible");
+        } else if (evt.type === "complete") {
+          document.getElementById("sum-file").textContent = filename;
+          document.getElementById("sum-chunks").textContent = evt.total_chunks;
+          document.getElementById("sum-rows").textContent = evt.rows_inserted;
+          summary.classList.add("visible");
+          resetLink.classList.add("visible");
+        }
+      }
+
+      function resetUI() {
+        input.value = "";
+        input.disabled = false;
+        fileChosen.style.display = "none";
+        runBtn.disabled = true;
+        stepsEl.classList.remove("visible");
+        summary.classList.remove("visible");
+        errorBox.classList.remove("visible");
+        resetLink.classList.remove("visible");
+        ["extract", "chunk", "embed", "store"].forEach((s) =>
+          setStep(s, "", "Waiting…"),
+        );
+      }
+
+      // ── Tab switching ────────────────────────────────────────────────
+      function switchTab(name) {
+        document
+          .querySelectorAll(".tab-panel")
+          .forEach((p) => p.classList.remove("active"));
+        document
+          .querySelectorAll(".tab-btn")
+          .forEach((b) => b.classList.remove("active"));
+        document.getElementById(`tab-${name}`).classList.add("active");
+        document.querySelectorAll(".tab-btn").forEach((b) => {
+          if (
+            b.textContent
+              .toLowerCase()
+              .includes(name === "pipeline" ? "ingest" : "ask")
+          )
+            b.classList.add("active");
+        });
+      }
+
+      // ── Ask flow ─────────────────────────────────────────────────────
+      document.getElementById("askInput").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") submitAsk();
+      });
+
+      async function submitAsk() {
+        const query = document.getElementById("askInput").value.trim();
+        if (!query) return;
+
+        const askBtn = document.getElementById("askBtn");
+        const spinner = document.getElementById("askSpinner");
+        const resultsEl = document.getElementById("askResults");
+        const emptyEl = document.getElementById("askEmpty");
+
+        askBtn.disabled = true;
+        spinner.classList.add("visible");
+        resultsEl.innerHTML = "";
+
+        try {
+          const res = await fetch("/api/ask", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query }),
+          });
+          const data = await res.json();
+
+          if (!res.ok) throw new Error(data.error || res.statusText);
+
+          spinner.classList.remove("visible");
+
+          if (!data.results || data.results.length === 0) {
+            resultsEl.innerHTML =
+              '<div class="ask-empty">No matching chunks found. Try ingesting a PDF first.</div>';
+            return;
+          }
+
+          data.results.forEach((r, i) => {
+            const card = document.createElement("div");
+            card.className = "result-card";
+            card.innerHTML = `
+              <div class="result-meta">
+                <span>📄 ${r.source.split("/").pop()} &nbsp;·&nbsp; Page ${r.page}</span>
+                <span class="score">Score ${r.score.toFixed(4)}</span>
+              </div>
+              <div class="result-text">${escapeHtml(r.text)}</div>`;
+            resultsEl.appendChild(card);
+          });
+        } catch (err) {
+          spinner.classList.remove("visible");
+          resultsEl.innerHTML = `<div class="ask-empty" style="color:#f87171">Error: ${escapeHtml(err.message)}</div>`;
+        } finally {
+          askBtn.disabled = false;
+        }
+      }
+
+      function escapeHtml(str) {
+        return str
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+    </script>
+  </body>
+</html>
