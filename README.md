@@ -28,8 +28,13 @@ PDF file
         embed_text()
    │
    ▼
-[4] Feed embeddings into RAG
-    (vector store → retrieval → generation)
+[4] Store in vector database     →  PostgreSQL / pgvector
+        lib/vector.py
+        store_embeddings()
+   │
+   ▼
+[5] Feed embeddings into RAG
+    (retrieval → generation)
 ```
 
 ### Step 1 — PDF Extraction (`lib/pdf.py`)
@@ -66,6 +71,46 @@ vector = embed_text("What is Lexus?")
 print(len(vector))  # 384
 ```
 
+### Step 4 — Vector Storage (`lib/vector.py`)
+
+`store_embeddings(chunks)` persists embedded chunks into a **PostgreSQL + pgvector** database.
+
+- Calls `init_table()` internally, which enables the `vector` extension and creates the `document_chunks` table if they don't already exist.
+- Accepts the same chunk list format produced by the embed step — each item must have `index`, `page`, `source`, `text`, and `embedding` fields.
+- Uses `psycopg2` with the `pgvector` adapter for efficient `VECTOR(384)` inserts.
+- Returns the number of rows inserted.
+
+**Table schema — `document_chunks`**
+
+| column        | type                 | description              |
+| ------------- | -------------------- | ------------------------ |
+| `id`          | `SERIAL PRIMARY KEY` | auto-increment row id    |
+| `source`      | `TEXT`               | original PDF file path   |
+| `page`        | `INTEGER`            | source page number       |
+| `chunk_index` | `INTEGER`            | sequential chunk number  |
+| `text`        | `TEXT`               | chunk text content       |
+| `embedding`   | `VECTOR(384)`        | 384-dim embedding vector |
+
+**Connection defaults**
+
+| setting  | value       |
+| -------- | ----------- |
+| Host     | `localhost` |
+| Port     | `5432`      |
+| Database | `rag_db`    |
+| Username | `tvydev`    |
+
+```python
+from lib.vector import store_embeddings
+import json
+
+with open("output/lexus_company_background_embeddings.json") as f:
+    data = json.load(f)
+
+inserted = store_embeddings(data["chunks"])
+print(f"Inserted {inserted} rows")
+```
+
 ---
 
 ## Project Structure
@@ -76,7 +121,8 @@ ask-pdf-rag/
 ├── lib/
 │   ├── pdf.py              # PDF loading & extraction
 │   ├── chunk.py            # Text chunking & JSON export
-│   └── embed.py            # Text → embedding vector
+│   ├── embed.py            # Text → embedding vector
+│   └── vector.py           # Store embeddings in pgvector
 ├── static/
 │   └── pdf/
 │       └── lexus_company_background.pdf
@@ -91,18 +137,109 @@ ask-pdf-rag/
 
 ---
 
+## Technologies Required
+
+### Language & Runtime
+
+| Technology | Version | Purpose                                  |
+| ---------- | ------- | ---------------------------------------- |
+| **Python** | 3.10+   | Runtime language for the entire pipeline |
+
+### Frameworks
+
+| Technology    | Version | Purpose                  |
+| ------------- | ------- | ------------------------ |
+| **Flask**     | latest  | HTTP API server          |
+| **LangChain** | latest  | Text splitting utilities |
+
+### Libraries
+
+| Technology                  | Version | Purpose                                    |
+| --------------------------- | ------- | ------------------------------------------ |
+| **PyMuPDF** (via LangChain) | latest  | PDF parsing and text extraction            |
+| **sentence-transformers**   | latest  | Local embedding model (`all-MiniLM-L6-v2`) |
+| **psycopg2-binary**         | latest  | Python PostgreSQL driver                   |
+| **pgvector (Python)**       | latest  | psycopg2 adapter for the `VECTOR` type     |
+| **python-dotenv**           | latest  | Load environment variables from `.env`     |
+
+### Tools
+
+| Technology | Version | Purpose                                                 |
+| ---------- | ------- | ------------------------------------------------------- |
+| **Docker** | latest  | Containerise and run the PostgreSQL + pgvector database |
+
+### Databases & Extensions
+
+| Technology     | Version | Purpose                                                          |
+| -------------- | ------- | ---------------------------------------------------------------- |
+| **PostgreSQL** | 16      | Relational database for vector storage                           |
+| **pgvector**   | 0.7+    | PostgreSQL extension for the `VECTOR` type and similarity search |
+
+### Platforms
+
+| Technology       | Version | Purpose                                                                      |
+| ---------------- | ------- | ---------------------------------------------------------------------------- |
+| **Hugging Face** | —       | Model hub — hosts `all-MiniLM-L6-v2`; free account required for an API token |
+
+---
+
 ## Setup
 
-```bash
-# Clone & enter the project
-git clone <repo-url> && cd ask-pdf-rag
+### 1. Clone the project
 
+```bash
+git clone <repo-url> && cd ask-pdf-rag
+```
+
+### 2. Start the PostgreSQL + pgvector database
+
+Requires [Docker](https://docs.docker.com/get-docker/). The `pgvector/pgvector:pg16` image ships with the `vector` extension pre-installed.
+
+```bash
+docker run -d \
+  --name pgvector-db \
+  -e POSTGRES_PASSWORD=tvydev \
+  -e POSTGRES_USER=tvydev \
+  -e POSTGRES_DB=rag_db \
+  -p 5432:5432 \
+  -v pgvector_data:/var/lib/postgresql/data \
+  pgvector/pgvector:pg16
+```
+
+Verify the container is running:
+
+```bash
+docker ps --filter name=pgvector-db
+```
+
+#### Enable the vector extension
+
+Connect to the database and enable the extension once:
+
+```bash
+docker exec -it pgvector-db psql -U tvydev -d rag_db -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+> **Note:** `store_embeddings()` in `lib/vector.py` also runs this automatically on every call, so this step is optional but good practice to verify connectivity.
+
+To stop / restart the container later:
+
+```bash
+docker stop pgvector-db
+docker start pgvector-db
+```
+
+---
+
+### 3. Set up Python environment
+
+```bash
 # Create and activate a virtual environment
 python -m venv .venv
 source .venv/bin/activate
 
 # Install dependencies
-pip install flask langchain-community langchain-text-splitters pymupdf sentence-transformers python-dotenv
+pip install flask langchain-community langchain-text-splitters pymupdf sentence-transformers python-dotenv psycopg2-binary pgvector
 
 # Add your Hugging Face token to .env (get one free at https://huggingface.co/settings/tokens)
 echo "HF_TOKEN=your_token_here" > .env
@@ -229,12 +366,36 @@ curl -X GET http://127.0.0.1:5000/api/sample-embed-text
 
 ---
 
+### `GET /api/sample-store-embeddings`
+
+Reads `output/lexus_company_background_embeddings.json` and inserts all embedded chunks into the `document_chunks` table in PostgreSQL using pgvector.
+
+> Run `/api/sample-embed-text` first to generate the embeddings JSON file.
+
+**curl**
+
+```bash
+curl -X GET http://127.0.0.1:5000/api/sample-store-embeddings
+```
+
+**Response**
+
+```json
+{
+  "message": "Successfully stored 91 embedded chunks in the database. (Timestamp: 2026-03-08 12:00:30.123456)",
+  "total_chunks": 91
+}
+```
+
+---
+
 ## Using the Library Directly
 
 ```python
 from lib.pdf import save_pdf_content
 from lib.chunk import chunk_text, save_chunks_to_json
 from lib.embed import embed_text
+from lib.vector import store_embeddings
 
 # Step 1 — extract
 save_pdf_content("static/pdf/lexus_company_background.pdf", "output/lexus_company_background.txt")
@@ -247,8 +408,11 @@ save_chunks_to_json(chunks, "output/lexus_company_background.json")
 
 # Step 4 — embed each chunk
 for chunk in chunks:
-    vector = embed_text(chunk["text"])  # list[float], 384 dims
-    # store vector + chunk metadata in your vector DB
+    chunk["embedding"] = embed_text(chunk["text"])  # list[float], 384 dims
+
+# Step 5 — store in PostgreSQL / pgvector
+inserted = store_embeddings(chunks)
+print(f"Inserted {inserted} rows into document_chunks")
 ```
 
 ---
@@ -256,6 +420,6 @@ for chunk in chunks:
 ## Next Steps (RAG Pipeline)
 
 1. ~~**Embed**~~ ✅ — `embed_text()` in `lib/embed.py` using `all-MiniLM-L6-v2`.
-2. **Index** — store vectors + metadata (`page`, `source`) in a vector database (e.g. Chroma, Pinecone, pgvector).
-3. **Retrieve** — on user query, embed the query and fetch the top-k relevant chunks.
+2. ~~**Index**~~ ✅ — `store_embeddings()` in `lib/vector.py` persists vectors + metadata into PostgreSQL via pgvector.
+3. **Retrieve** — on user query, embed the query and fetch the top-k relevant chunks using a cosine/L2 similarity search against `document_chunks.embedding`.
 4. **Generate** — pass retrieved context to an LLM to produce a grounded answer.

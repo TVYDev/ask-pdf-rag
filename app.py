@@ -68,3 +68,24 @@ def sample_embed_text():
         "total_chunks": len(chunks),
         "output_file": output_path,
     }
+
+@app.route("/api/sample-store-embeddings")
+def sample_store_embeddings():
+    """
+    Reads a chunks JSON file with embeddings and stores them in a PostgreSQL database using the store_embeddings function from lib/vector.
+    """
+    import json
+    from lib.vector import store_embeddings
+
+    input_path = "output/lexus_company_background_embeddings.json"
+
+    with open(input_path, "r") as f:
+        data = json.load(f)
+
+    chunks = data.get("chunks", [])
+    num_inserted = store_embeddings(chunks)
+
+    return {
+        "message": f"Successfully stored {num_inserted} embedded chunks in the database. (Timestamp: {datetime.now()})",
+        "total_chunks": num_inserted,
+    }
